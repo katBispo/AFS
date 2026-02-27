@@ -1,0 +1,17 @@
+
+:root { --bg:#0b1020; --panel:#131a2a; --text:#e6eefc; --muted:#a6b0c3; --accent:#4ea1ff; }
+*{ box-sizing:border-box }
+body{ margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Helvetica Neue', Arial; background:var(--bg); color:var(--text); }
+a{ color: var(--accent); text-decoration:none }
+.container{ max-width:1200px; margin:0 auto; padding:24px }
+.header{ display:flex; gap:16px; align-items:center; padding:16px 24px; background:var(--panel); border-bottom:1px solid #1f2640 }
+.nav{ display:flex; gap:16px }
+.card{ background:var(--panel); border:1px solid #1f2640; border-radius:10px; padding:16px }
+.table{ width:100%; border-collapse:collapse; }
+.table th,.table td{ padding:8px 10px; border-bottom:1px solid #222b49 }
+.badge{ padding:2px 8px; border-radius:999px; font-size:12px; }
+.badge.ok{ background:#173c2e; color:#6de5b5 }
+.badge.alerta{ background:#3c2e17; color:#f0b35a }
+.badge.critico{ background:#3c1717; color:#ff7a7a }
+.row{ display:flex; gap:16px; flex-wrap:wrap }
+.col{ flex:1 1 360px }
