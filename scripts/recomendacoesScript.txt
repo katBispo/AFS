@@ -1,0 +1,27 @@
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Ingestor de configuração a partir de CSV (RelatorioAFS.csv) para MySQL (schema da aplicação Spring/JPA).
+
+- Lê CSV com colunas: Componente | Propriedade | Valor | (opcionais) Amostragem | Intervalo de amostragem | ...
+- Localiza a linha "Arquivo de Configuração" -> parseia o texto (!Current Configuration, interfaces, ip address, vlan, rotas, snmp etc.)
+- Localiza linhas "Assinatura de Configuração", "Estado da Configuração", "Temperatura",
+  e no grupo de "Protocolo Ping" a "Tempo Máximo de Resposta" (e tenta capturar "Intervalo de amostragem")
+- Persiste em MySQL: equipamento, vlan, interface_rede, ip_interface, rota, configuracao_equipamento,
+  usuario_equipamento, temperatura_leitura, teste_rede
+
+Uso (Windows / PowerShell):
+  python ingest_csv.py --csv "C:\\Users\\SAT\\Documents\\RelatorioAFS.csv" ^
+    --mysql-host localhost ^
+    --mysql-db telecommvc ^
+    --mysql-user root ^
+    --mysql-pass "Sucodeuva201212##"
+
+Uso (cmd):
+  python ingest_csv.py --csv "C:\\Users\\SAT\\Documents\\RelatorioAFS.csv" --mysql-host localhost --mysql-db telecommvc --mysql-user root --mysql-pass "Sucodeuva201212##"
+
+Requisitos:
+  pip install mysql-connector-python python-dateutil
+"""
