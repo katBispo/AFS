@@ -5,8 +5,21 @@ import { listarEquipamentos } from '../services/api'
 
 export default function Equipamentos(){
   const [data, setData] = useState([])
-  useEffect(()=>{ listarEquipamentos().then(setData) },[])
-
+useEffect(() => {
+  listarEquipamentos()
+    .then((res) => {
+      console.log('[DEBUG] /api/equipamentos payload =>', res);
+      setData(
+        Array.isArray(res) ? res
+        : Array.isArray(res?.content) ? res.content
+        : []
+      );
+    })
+    .catch((err) => {
+      console.error('[DEBUG] erro ao listar equipamentos', err);
+      setData([]); // fallback
+    });
+}, []);
   return (
     <div className="row">
       <div className="col">

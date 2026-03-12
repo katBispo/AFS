@@ -29,6 +29,10 @@ import mysql.connector as mysql
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
+import re
+from collections import defaultdict
+
+
 # ------------------------------
 # Helpers de rede / parsing
 # ------------------------------
@@ -367,9 +371,44 @@ def find_col(headers: List[str], *names) -> Optional[str]:
     return None
 
 
-def extract_from_csv(rows: List[Dict[str, str]]) -> Dict[str, Any]:
+
+
+def group_rows_by_ip(rows: List[Dict[str, str]]) -> Dict[str, List[Dict[str, str]]]:
+    """
+    Agrupa as linhas por IP do campo 'Componente'.
+    Retorna: { '10.0.0.1': [linhas...], '192.168.1.10': [linhas...], ... }
+    """
     if not rows:
         raise RuntimeError('CSV/Planilha sem linhas.')
+
+    headers = list(rows[0].keys())
+    col_comp = find_col(headers, 'Componente')
+    if not col_comp:
+        raise RuntimeError('Não encontrei a coluna "Componente".')
+
+    por_ip: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+    for r in rows:
+        comp = r.get(col_comp) or ''
+        m = re.match(r'(\d{1,3}(?:\.\d{1,3}){3})', comp)
+        if not m:
+            # linha sem IP no início do Componente (ignora)
+            continue
+        ip = m.group(1)
+        por_ip[ip].append(r)
+
+    return dict(por_ip)
+
+
+def extract_from_csv_block(rows: List[Dict[str, str]]) -> Dict[str, Any]:
+    """
+    Extrai dados de UM BLOCO (um IP).
+    Se não houver 'Arquivo de Configuração', retorna dados 'parciais':
+      - equipamento (ip_principal + nome, se existir)
+      - temperatura, ping_tmax/intervalo (se existirem)
+      - e deixa listas (vlans, interfaces, rotas, usuarios) vazias
+    """
+    if not rows:
+        raise RuntimeError('Bloco vazio.')
 
     headers = list(rows[0].keys())
 
@@ -380,7 +419,7 @@ def extract_from_csv(rows: List[Dict[str, str]]) -> Dict[str, Any]:
     col_intervalo = find_col(headers, 'Intervalo de amostragem', 'Intervalo', 'Intervalo (amostragem)')
 
     if not (col_comp and col_prop and col_val):
-        raise RuntimeError(f'Arquivo não contém colunas esperadas. Achei: {headers}')
+        raise RuntimeError(f'Bloco não contém colunas esperadas. Achei: {headers}')
 
     # dados de alto nível
     config_text = None
@@ -390,8 +429,9 @@ def extract_from_csv(rows: List[Dict[str, str]]) -> Dict[str, Any]:
     ping_tmax_ms = None
     ping_intervalo_s = None
     data_coleta = None
+    nome_do_bloco = None  # “Nome” (ex.: ARM KM186) que aparece como Propriedade no bloco
 
-    # tenta achar uma data em qualquer célula (ex.: '07-25-2025 18:12:28')
+    # tenta achar uma data em qualquer célula
     for r in rows[:10]:
         for v in r.values():
             if isinstance(v, str):
@@ -404,29 +444,33 @@ def extract_from_csv(rows: List[Dict[str, str]]) -> Dict[str, Any]:
     if not data_coleta:
         data_coleta = datetime.now(timezone.utc)
 
-    # Componente (IP) do equipamento
+    # IP do componente (obrigatório para esse bloco)
     ip_component = None
 
-    # Varre linhas
+    # Varre linhas do bloco
     for r in rows:
         comp = r.get(col_comp) or ''
         prop = (r.get(col_prop) or '').strip()
         val  = r.get(col_val)
 
-        # IP do componente (primeiro IP que aparecer no componente)
+        # IP do componente (primeiro IP do bloco)
         if not ip_component:
             mip = re.search(r'(\d{1,3}(?:\.\d{1,3}){3})', comp)
             if mip:
                 ip_component = mip.group(1)
 
+        # Nome (quando a planilha traz “Propriedade = Nome”)
+        if prop.lower() == 'nome' and val:
+            nome_do_bloco = val.strip()
+
         # Arquivo de Configuração -> texto multilinha
-        if prop.lower() == 'arquivo de configuração'.lower() and val:
+        if prop.lower() == 'arquivo de configuração' and val:
             config_text = val
 
         # Assinatura / Estado da Configuração
-        if 'assinatura de configuração'.lower() in prop.lower() and val:
+        if 'assinatura de configuração' in prop.lower() and val:
             assinatura = val.strip()
-        if 'estado da configuração'.lower() in prop.lower() and val:
+        if 'estado da configuração' in prop.lower() and val:
             estado_conf = val.strip().upper()
 
         # Temperatura
@@ -435,7 +479,7 @@ def extract_from_csv(rows: List[Dict[str, str]]) -> Dict[str, Any]:
             if m:
                 temperatura = int(m.group(1))
 
-        # PING (normalmente o componente vem com '... Protocolo Ping')
+        # PING (componente contém "... Protocolo Ping")
         if 'protocolo ping' in comp.lower() and ('tempo máximo de resposta' in prop.lower()) and val:
             m = re.search(r'(\d+)', val)
             if m:
@@ -448,18 +492,43 @@ def extract_from_csv(rows: List[Dict[str, str]]) -> Dict[str, Any]:
                     if m2:
                         ping_intervalo_s = int(m2.group(1))
 
-    if not config_text:
-        raise RuntimeError("Não encontrei a linha 'Arquivo de Configuração' no arquivo (coluna Valor vazia).")
+    # Equipamento base
+    equipamento = {
+        'nome': nome_do_bloco or 'SEM_NOME',
+        'modelo': None,
+        'versao_sistema': None,
+        'fabricante': None,
+        'localizacao': None,
+        'ip_principal': ip_component,  # CHAVE do bloco!
+        'descricao': None,
+        'status': 'OK'
+    }
 
-    # Parseia o texto da configuração
-    parsed = parse_config_text(config_text)
+    vlans: List[int] = []
+    interfaces: List[Dict[str, Any]] = []
+    rotas: List[Dict[str, Any]] = []
+    usuarios: List[Dict[str, Any]] = []
 
-    # Sobrepõe/ajusta equipamento
-    if ip_component and not parsed['equipamento']['ip_principal']:
-        parsed['equipamento']['ip_principal'] = ip_component
+    # Se houver arquivo de configuração, parseie
+    if config_text:
+        parsed = parse_config_text(config_text)
+
+        # Se no texto o ip_principal não existir, usa o ip do bloco
+        if ip_component and not parsed['equipamento']['ip_principal']:
+            parsed['equipamento']['ip_principal'] = ip_component
+
+        # Sobrescreve equipamento com o que veio do config (mantendo nome_do_bloco se houver)
+        equipamento.update(parsed['equipamento'])
+        if nome_do_bloco:
+            equipamento['nome'] = nome_do_bloco
+
+        vlans = parsed['vlans']
+        interfaces = parsed['interfaces']
+        rotas = parsed['rotas']
+        usuarios = parsed['usuarios']
 
     config_meta = {
-        'conteudo': config_text,
+        'conteudo': config_text,                      # pode ser None
         'assinatura': assinatura,
         'estado': (estado_conf or 'SALVO').upper(),
         'data_coleta': data_coleta
@@ -472,11 +541,11 @@ def extract_from_csv(rows: List[Dict[str, str]]) -> Dict[str, Any]:
     }
 
     return {
-        'equipamento': parsed['equipamento'],
-        'vlans': parsed['vlans'],
-        'interfaces': parsed['interfaces'],
-        'rotas': parsed['rotas'],
-        'usuarios': parsed['usuarios'],
+        'equipamento': equipamento,
+        'vlans': vlans,
+        'interfaces': interfaces,
+        'rotas': rotas,
+        'usuarios': usuarios,
         'config': config_meta,
         'monitor': monitor
     }
@@ -711,49 +780,72 @@ def main():
     ap.add_argument('--csv', required=True, help='Caminho do arquivo (CSV OU XLSX)')
     ap.add_argument('--sheet', default=None, help='Nome da planilha (aba) se for XLSX; padrão: primeira aba')
     ap.add_argument('--mysql-host', default='localhost')
-    ap.add_argument('--mysql-db', default='relatorioAfs')  # ajustado para seu caso
+    ap.add_argument('--mysql-db', default='relatorioAfs')   # ajuste para seu schema se quiser
     ap.add_argument('--mysql-user', default='root')
-    ap.add_argument('--mysql-pass', default='Sucodeuva201212##')  # conforme solicitado
+    ap.add_argument('--mysql-pass', default='Sucodeuva201212##')
     args = ap.parse_args()
 
-    # 1) Lê arquivo (CSV ou XLSX) e extrai blocos
+    # 1) Lê arquivo (CSV ou XLSX)
     rows = read_rows_any(args.csv, sheet_name=args.sheet)
-    data = extract_from_csv(rows)
 
-    # 2) Conecta MySQL e persiste
+    # 2) Agrupa por IP do Componente (cada IP = 1 equipamento)
+    blocos_por_ip = group_rows_by_ip(rows)
+    if not blocos_por_ip:
+        print('[WARN] Nenhum bloco (IP) encontrado no arquivo.')
+        return
+
+    # 3) Conecta MySQL e persiste CADA BLOCO
     conn = connect_mysql(args.mysql_host, args.mysql_db, args.mysql_user, args.mysql_pass)
+    total = 0
     try:
         cur = conn.cursor()
 
-        eid = upsert_equipamento(cur, data['equipamento'])
+        for ip, bloco in blocos_por_ip.items():
+            try:
+                data = extract_from_csv_block(bloco)
 
-        for v in data['vlans']:
-            upsert_vlan(cur, eid, v)
+                # ---- Persistência por bloco (IP) ----
+                eid = upsert_equipamento(cur, data['equipamento'])
 
-        for iface in data['interfaces']:
-            iid = upsert_interface(cur, eid, iface)
-            for ipd in iface['ips']:
-                if ipd['ip'] and ipd['prefixo'] is not None:
-                    upsert_ip_interface(cur, iid, ipd['ip'], ipd['prefixo'])
+                for v in data['vlans']:
+                    upsert_vlan(cur, eid, v)
 
-        for r in data['rotas']:
-            upsert_rota(cur, eid, r['destino'], r['prefixo'], r['gateway'], r['tipo'])
+                for iface in data['interfaces']:
+                    iid = upsert_interface(cur, eid, iface)
+                    for ipd in iface['ips']:
+                        if ipd['ip'] and ipd['prefixo'] is not None:
+                            upsert_ip_interface(cur, iid, ipd['ip'], ipd['prefixo'])
 
-        cfg = data['config']
-        ts_cfg = cfg['data_coleta']
-        if isinstance(ts_cfg, datetime) and ts_cfg.tzinfo is not None:
-            ts_cfg = ts_cfg.replace(tzinfo=None)
-        insert_config(cur, eid, cfg['conteudo'], cfg['assinatura'], cfg['estado'], ts_cfg)
+                for r in data['rotas']:
+                    upsert_rota(cur, eid, r['destino'], r['prefixo'], r['gateway'], r['tipo'])
 
-        for u in data['usuarios']:
-            upsert_usuario(cur, eid, u['usuario'], u['snmpv3_auth'], u['snmpv3_crypto'])
+                cfg = data['config']
+                ts_cfg = cfg['data_coleta']
+                if isinstance(ts_cfg, datetime) and ts_cfg.tzinfo is not None:
+                    ts_cfg = ts_cfg.replace(tzinfo=None)
 
-        monitor = data['monitor']
-        insert_temperatura(cur, eid, monitor['temperatura_c'], ts_cfg)
-        upsert_teste_ping(cur, eid, monitor['ping_tempo_max_ms'], monitor['ping_intervalo_s'])
+                # Só insere Config se existir conteúdo
+                if cfg['conteudo']:
+                    insert_config(cur, eid, cfg['conteudo'], cfg['assinatura'], cfg['estado'], ts_cfg)
+
+                # Usuários (se vieram do config)
+                for u in data['usuarios']:
+                    upsert_usuario(cur, eid, u['usuario'], u['snmpv3_auth'], u['snmpv3_crypto'])
+
+                # Telemetria simples
+                monitor = data['monitor']
+                insert_temperatura(cur, eid, monitor['temperatura_c'], ts_cfg)
+                upsert_teste_ping(cur, eid, monitor['ping_tempo_max_ms'], monitor['ping_intervalo_s'])
+
+                total += 1
+                print(f"[OK] Ingestão do bloco {ip} concluída. Equipamento id = {eid}")
+
+            except Exception as bex:
+                # Não derruba os outros IPs; loga e segue.
+                print(f"[WARN] Falha ao processar bloco {ip}: {bex}", file=sys.stderr)
 
         conn.commit()
-        print(f"[OK] Ingestão concluída. Equipamento id = {eid}")
+        print(f"[OK] Ingestão finalizada ({total} equipamento(s)).")
 
     except Exception as ex:
         conn.rollback()

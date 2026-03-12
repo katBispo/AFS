@@ -57,6 +57,8 @@ public class Equipamento extends Auditavel {
     @Column(length = 20, nullable = false)
     private StatusEquipamento status = StatusEquipamento.DESCONHECIDO;
 
+
+
     // As coleções abaixo são úteis no domínio, mas geralmente você NÃO quer serializá-las em cada resposta.
     // Para evitar recursão e payloads gigantes, use @JsonIgnore (ou retorne DTOs).
     @JsonIgnore
@@ -93,4 +95,132 @@ public class Equipamento extends Auditavel {
     @OneToMany(mappedBy = "equipamento", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<UsuarioEquipamento> usuarios = new ArrayList<>();
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getNome() {
+        return nome;
+    }
+
+    public void setNome(String nome) {
+        this.nome = nome;
+    }
+
+    public String getModelo() {
+        return modelo;
+    }
+
+    public void setModelo(String modelo) {
+        this.modelo = modelo;
+    }
+
+    public String getVersaoSistema() {
+        return versaoSistema;
+    }
+
+    public void setVersaoSistema(String versaoSistema) {
+        this.versaoSistema = versaoSistema;
+    }
+
+    public String getFabricante() {
+        return fabricante;
+    }
+
+    public void setFabricante(String fabricante) {
+        this.fabricante = fabricante;
+    }
+
+    public String getLocalizacao() {
+        return localizacao;
+    }
+
+    public void setLocalizacao(String localizacao) {
+        this.localizacao = localizacao;
+    }
+
+    public String getIpPrincipal() {
+        return ipPrincipal;
+    }
+
+    public void setIpPrincipal(String ipPrincipal) {
+        this.ipPrincipal = ipPrincipal;
+    }
+
+    public String getDescricao() {
+        return descricao;
+    }
+
+    public void setDescricao(String descricao) {
+        this.descricao = descricao;
+    }
+
+    public StatusEquipamento getStatus() {
+        return status;
+    }
+
+    public void setStatus(StatusEquipamento status) {
+        this.status = status;
+    }
+
+    public List<InterfaceRede> getInterfaces() {
+        return interfaces;
+    }
+
+    public void setInterfaces(List<InterfaceRede> interfaces) {
+        this.interfaces = interfaces;
+    }
+
+    public List<Vlan> getVlans() {
+        return vlans;
+    }
+
+    public void setVlans(List<Vlan> vlans) {
+        this.vlans = vlans;
+    }
+
+    public List<Rota> getRotas() {
+        return rotas;
+    }
+
+    public void setRotas(List<Rota> rotas) {
+        this.rotas = rotas;
+    }
+
+    public List<ConfiguracaoEquipamento> getConfiguracoes() {
+        return configuracoes;
+    }
+
+    public void setConfiguracoes(List<ConfiguracaoEquipamento> configuracoes) {
+        this.configuracoes = configuracoes;
+    }
+
+    public List<Monitoramento> getMonitoramentos() {
+        return monitoramentos;
+    }
+
+    public void setMonitoramentos(List<Monitoramento> monitoramentos) {
+        this.monitoramentos = monitoramentos;
+    }
+
+    public List<TesteRede> getTestes() {
+        return testes;
+    }
+
+    public void setTestes(List<TesteRede> testes) {
+        this.testes = testes;
+    }
+
+    public List<UsuarioEquipamento> getUsuarios() {
+        return usuarios;
+    }
+
+    public void setUsuarios(List<UsuarioEquipamento> usuarios) {
+        this.usuarios = usuarios;
+    }
 }
