@@ -84,6 +84,13 @@
         <mainClass>com.exemplo.telecom.TelecomMvcApplication</mainClass>
           <source>${java.version}</source>
           <target>${java.version}</target>
+          
+          <encoding>UTF-8</encoding>          <!-- 👈 forçar UTF-8 -->
+          <parameters>true</parameters>  
+
+          
+          <parameters>true</parameters>
+
         </configuration>
       </plugin>
     </plugins>
